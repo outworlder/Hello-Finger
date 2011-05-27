@@ -1,68 +1,147 @@
+(use srfi-1)
+
 (import foreign)
+
+(define *DEVICE-OPEN* #f)
+(define *FPRINT-INITIALIZED* #f)
+
+(define (is-open?)
+  *DEVICE-OPEN*)
+
+(define (is-initialized?)
+  *FPRINT-INITIALIZED*)
 
 (foreign-declare "#include <libfprint/fprint.h>")
 
-(define-syntax c-constant
-  (syntax-rules ()
-    ([_ name type] (define name (foreign-value name type)))))
+;; (define-syntax c-constant
+;;   (syntax-rules ()
+;;     ([_ name type] (define name (foreign-value name type)))))
 
-;;; Constantes
-;; (c-constant LEFT_THUMB int)
-;; (c-constant LEFT_INDEX int)
-;; (c-constant LEFT_MIDDLE int)
-;; (c-constant LEFT_RING int)
-;; (c-constant LEFT_LITTLE int)
-;; (c-constant RIGHT_THUMB int)
-;; (c-constant RIGHT_INDEX int)
-;; (c-constant RIGHT_MIDDLE int)
-;; (c-constant RIGHT_RING int)
-;; (c-constant RIGHT_LITTLE int)
+;; ;;; Constantes
+;; ;; (c-constant LEFT_THUMB int)
+;; ;; (c-constant LEFT_INDEX int)
+;; ;; (c-constant LEFT_MIDDLE int)
+;; ;; (c-constant LEFT_RING int)
+;; ;; (c-constant LEFT_LITTLE int)
+;; ;; (c-constant RIGHT_THUMB int)
+;; ;; (c-constant RIGHT_INDEX int)
+;; ;; (c-constant RIGHT_MIDDLE int)
+;; ;; (c-constant RIGHT_RING int)
+;; ;; (c-constant RIGHT_LITTLE int)
 
-(define LEFT-HAND
-  '(LEFT-THUMB LEFT-INDEX LEFT-MIDDLE LEFT-RING LEFT-LITTLE))
+;; (define LEFT-HAND
+;;   '(LEFT-THUMB LEFT-INDEX LEFT-MIDDLE LEFT-RING LEFT-LITTLE))
 
-(define RIGHT-HAND
-  '(RIGHT-THUMB RIGHT-INDEX RIGHT-MIDDLE RIGHT-RING RIGHT-LITTLE))
+;; (define RIGHT-HAND
+;;   '(RIGHT-THUMB RIGHT-INDEX RIGHT-MIDDLE RIGHT-RING RIGHT-LITTLE))
 
-;;(c-constant FP_VERIFY_NO_MATCH int)
-;; (c-constant FP_VERIFY_MATCH int)
-;; (c-constant FP_VERIFY_RETRY int)
-;; (c-constant FP_ENROLL_RETRY int)
-;; (c-constant FP_VERIFY_RETRY_TOO_SHORT int)
-;; (c-constant FP_ENROLL_RETRY_TOO_SHORT int)
-;; (c-constant FP_VERIFY_RETRY_CENTER_FINGER int)
-;; (c-constant FP_ENROLL_RETRY_CENTER_FINGER int)
-;; (c-constant FP_VERIFY_RETRY_REMOVE_FINGER int)
-;; (c-constant FP_ENROLL_RETRY_REMOVE_FINGER int)
+;; ;;(c-constant FP_VERIFY_NO_MATCH int)
+;; ;; (c-constant FP_VERIFY_MATCH int)
+;; ;; (c-constant FP_VERIFY_RETRY int)
+;; ;; (c-constant FP_ENROLL_RETRY int)
+;; ;; (c-constant FP_VERIFY_RETRY_TOO_SHORT int)
+;; ;; (c-constant FP_ENROLL_RETRY_TOO_SHORT int)
+;; ;; (c-constant FP_VERIFY_RETRY_CENTER_FINGER int)
+;; ;; (c-constant FP_ENROLL_RETRY_CENTER_FINGER int)
+;; ;; (c-constant FP_VERIFY_RETRY_REMOVE_FINGER int)
+;; ;; (c-constant FP_ENROLL_RETRY_REMOVE_FINGER int)
 
-;;; Initialization
+;; ;;; Initialization
 
 (define fp-init
-                                        ;(foreign-lambda int fp_init))
-  0)
+  (unless *FPRINT-INITIALIZED*
+    (let ([result (foreign-lambda int fp_init)])
+      (if (eq? result 0)
+          (set! *FPRINT-INITIALIZED* #t))
+      result)))
 
-;;; Debugging
+(define fp-exit
+  (if *FPRINT-INITIALIZED*
+      (lambda ()
+        (foreign-lambda void fp_exit)
+        (set! *FPRINT_INITIALIZED* #f)
+        #t)))
 
-(define fp-set-debug
-  (foreign-lambda void fp_set_debug int))
+;; ;;; Debugging
 
-;;; Device discovery
+;; (define fp-set-debug
+;;   (foreign-lambda void fp_set_debug int))
 
-;;; TODO: Verificar o retorno aqui.
-(define fp-discover-devs
-  (foreign-lambda c-pointer fp_discover_devs))
+;; ;;; Device discovery
 
-;;; Verification
+;; ;;; TODO: Verificar o retorno aqui.
+;;struct fp_dscv_dev** fp_discover_devs	(	void 		 )
+(define fp-discover-devices
+  (foreign-lambda (c-pointer (c-pointer (struct "fp_dscv_dev"))) fp_discover_devs))
+
+(define fp-dscv-devs-free
+  (foreign-lambda void fp_dscv_devs_free (c-pointer (c-pointer (struct "fp_dscv_dev")))))
+
+;;; Driver operations
+; const char* fp_driver_get_name	(	struct fp_driver * 	drv	 ) 	
+
+(define cfp-get-number-of-devices
+  (foreign-lambda* int (((c-pointer (c-pointer (struct "fp_dscv_dev"))) device_list))
+                   "int i;
+                    if (!device_list) {
+                       C_return(0);
+                    } else {
+                      for (i=0; device_list[i]; device_list++) {};
+                      C_return(i+1);
+                    }"))
+
+;;struct fp_driver* fp_dscv_dev_get_driver	(	struct fp_dscv_dev * 	dev	 )
+(define fp-dscv-dev-get-driver
+  (foreign-lambda (c-pointer (struct "fp_driver")) fp_dscv_dev_get_driver (c-pointer (struct "fp_dscv_dev"))))
 
 
-;; (define fp-verify-finger-img
-;;   ; "int fp_verify_finger_img(fp_dev* device, fp_print_data* enrolled_print, fp_img* image"
-;;   (foreign-lambda int "fp_verify_finger_img" c-pointer c-pointer (c-pointer "fp_img*")))
+(define fp-driver-get-name
+  (foreign-lambda (c-pointer c-string) fp_driver_get_name c-pointer))
 
-;; (define fp-dev-open
-;;   (foregin ))
+;;; High-level API
 
-;; (define (verify-finger fingerprint-data)
-;;   )
+(define-record device ptr driver)
+(define-record driver ptr type name)
+
+(define cfp-get-next-device
+  (foreign-lambda* (c-pointer (c-pointer (struct "fp_dscv_dev"))) (((c-pointer (c-pointer (struct "fp_dscv_dev"))) device_list))
+                   "if (!*device_list) {
+                      C_return(0);
+                    } else {
+                      C_return(++device_list);
+                    }"))
+
+(define cfp-dereference
+  (foreign-lambda* (c-pointer (struct "fp_dscv_dev")) (((c-pointer (c-pointer (struct "fp_dscv_dev"))) device_list))
+                   "C_return(*device_list);"
+                   ))
+
+;;; Discover, creates records and issues further calls to obtain the device and driver capabilities
+(define (discover-devices)
+  (unless (is-initialized?)
+    (fp-init))
+  (let ([device-pointers (fp-discover-devices)])
+    (let ([device-list
+           (unfold
+            (lambda (x) (equal? x #f))
+            (lambda (x) (make-device (cfp-dereference x) #f))
+            (lambda (x) (cfp-get-next-device x))
+            device-pointers)])
+      (fp-dscv-devs-free device-pointers)
+      device-list)))
+
+
+;; ;;; Verification
+
+
+;; ;; (define fp-verify-finger-img
+;; ;;   ; "int fp_verify_finger_img(fp_dev* device, fp_print_data* enrolled_print, fp_img* image"
+;; ;;   (foreign-lambda int "fp_verify_finger_img" c-pointer c-pointer (c-pointer "fp_img*")))
+
+;; ;; (define fp-dev-open
+;; ;;   (foregin ))
+
+;; ;; (define (verify-finger fingerprint-data)
+;; ;;   )
 
 

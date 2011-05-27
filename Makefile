@@ -1,3 +1,3 @@
 test:
-	csc test-fprint.scm -lfprint
+	csc -d2 test-fprint.scm -lfprint
 	./test-fprint
