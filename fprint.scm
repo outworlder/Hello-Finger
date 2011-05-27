@@ -2,7 +2,6 @@
 
 (import foreign)
 
-(define *DEVICE-OPEN* #f)
 (define *FPRINT-INITIALIZED* #f)
 
 (define (is-open?)
@@ -10,6 +9,12 @@
 
 (define (is-initialized?)
   *FPRINT-INITIALIZED*)
+
+(define cfprint-debug-mode (make-parameter #f))
+
+(define (plog str)
+  (if (cfprint-debug-mode)
+      (print str)))
 
 (foreign-declare "#include <libfprint/fprint.h>")
 
@@ -49,18 +54,33 @@
 ;; ;;; Initialization
 
 (define fp-init
-  (unless *FPRINT-INITIALIZED*
-    (let ([result (foreign-lambda int fp_init)])
-      (if (eq? result 0)
-          (set! *FPRINT-INITIALIZED* #t))
-      result)))
+  (foreign-lambda int fp_init))
 
 (define fp-exit
-  (if *FPRINT-INITIALIZED*
-      (lambda ()
-        (foreign-lambda void fp_exit)
-        (set! *FPRINT_INITIALIZED* #f)
-        #t)))
+  (foreign-lambda void fp_exit))
+
+(define (cfp-initialize)
+  (if (is-initialized?)
+      (begin
+        (plog "FPrint já inicializada.")
+        #f)
+      (let ([result (fp-init)])
+        (if (eq? result 0)
+            (begin
+              (plog "FPrint inicializada com sucesso")
+              (set! *FPRINT-INITIALIZED* #t)))
+        result)))
+
+(define (cfp-finalize)
+  (if (is-initialized?)
+      (begin
+        (fp-exit)
+        (plog "FPrint finalizada.")
+        (set! *FPRINT-INITIALIZED* #f)
+        #t)
+      (begin
+        (plog "FPrint já foi encerrada.")
+        #f)))
 
 ;; ;;; Debugging
 
@@ -82,12 +102,12 @@
 
 (define cfp-get-number-of-devices
   (foreign-lambda* int (((c-pointer (c-pointer (struct "fp_dscv_dev"))) device_list))
-                   "int i;
+                   "int i = 0;
                     if (!device_list) {
                        C_return(0);
                     } else {
-                      for (i=0; device_list[i]; device_list++) {};
-                      C_return(i+1);
+                      while (*(device_list++)) { i++; }
+                      C_return(i);
                     }"))
 
 ;;struct fp_driver* fp_dscv_dev_get_driver	(	struct fp_dscv_dev * 	dev	 )
@@ -96,7 +116,7 @@
 
 
 (define fp-driver-get-name
-  (foreign-lambda (c-pointer c-string) fp_driver_get_name c-pointer))
+  (foreign-lambda c-string fp_driver_get_name c-pointer))
 
 ;;; High-level API
 
@@ -119,7 +139,7 @@
 ;;; Discover, creates records and issues further calls to obtain the device and driver capabilities
 (define (discover-devices)
   (unless (is-initialized?)
-    (fp-init))
+    (cfp-initialize))
   (let ([device-pointers (fp-discover-devices)])
     (let ([device-list
            (unfold
@@ -129,7 +149,6 @@
             device-pointers)])
       (fp-dscv-devs-free device-pointers)
       device-list)))
-
 
 ;; ;;; Verification
 

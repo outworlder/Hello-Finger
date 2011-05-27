@@ -8,11 +8,13 @@
 
 (include "fprint.scm")
 
+(cfprint-debug-mode #f)
+
 (test-group "Low-level"
             (test-group "Inicialização"
-                        (test "Deve inicializar a libfprint com sucesso" 0 (fp-init))
-                        (test "Deve finalizar a libfprint com sucesso" #t (fp-exit)))
-
+                        (test "Deve inicializar a libfprint com sucesso" 0 (cfp-initialize))
+                        (test "Deve finalizar a libfprint com sucesso" #t (cfp-finalize)))
+            (cfp-initialize)
             (test-group "Device Discovery"
                         (let ([result (fp-discover-devices)])
                           (test "Deve conseguir obter um ponteiro para a lista de dispositivos" #t (pointer? result))
@@ -21,6 +23,14 @@
                         (let ([result (fp-discover-devices)])
                           (test "Deve conseguir contar os dispositivos" 1 (cfp-get-number-of-devices result))
                           (fp-dscv-devs-free result))
+                        (let ([device (cfp-dereference (fp-discover-devices))])
+                          (test "Deve desreferenciar ponteiro para um dispositivo" #t (pointer? device)))
+                        )
+            (test-group "Drivers"
+                        (let ([device (cfp-dereference (fp-discover-devices))])
+                          (test "Deve obter o driver" #t (pointer? (fp-dscv-dev-get-driver device))))
+                        (let ([device (fp-dscv-dev-get-driver (cfp-dereference (fp-discover-devices)))])
+                          (test "Deve obter o nome do driver" "uru4000" (fp-driver-get-name device)))
                         ))
 
 (test-group "High-level"
@@ -30,3 +40,5 @@
                               #t (all? (lambda (x)
                                          (device? x))
                                        (discover-devices)))))
+
+(cfp-finalize)
