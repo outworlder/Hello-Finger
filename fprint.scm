@@ -118,6 +118,9 @@
 (define fp-driver-get-name
   (foreign-lambda c-string fp_driver_get_name c-pointer))
 
+(define fp-driver-get-full-name
+  (foreign-lambda c-string fp_driver_get_full_name c-pointer))
+
 ;;; High-level API
 
 (define-record device ptr driver)
